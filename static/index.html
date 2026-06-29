@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Log Viewer</title>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;font-family:Consolas,Monospace}
+        html,body {height:100%;}
+        body {display:flex;height:100%;overflow:hidden}
+        .sidebar {width:260px;background:#222;color:#ddd;padding:10px;overflow-y:auto;flex-shrink:0}
+        .sidebar h3 {margin-bottom:10px;color:#fff;font-size:15px}
+        .log-item {
+            padding:6px 8px;margin:4px 0;
+            cursor:pointer;border-radius:4px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+        }
+        .log-item:hover {background:#444}
+        .log-item.active {background:#0066cc;color:#fff}
+        .download-file-btn {
+            font-size:12px;
+            padding:2px 6px;
+            background:#009966;
+            color:#fff;
+            border:none;
+            border-radius:3px;
+            cursor:pointer;
+        }
+        .download-file-btn:hover {background:#00bb77}
+        .main {flex:1;display:flex;flex-direction:column;height:100%;min-width:0;}
+        .tab-bar {
+            height:36px;
+            background:#2a2a2a;
+            display:flex;
+            align-items:center;
+            padding:0 8px;
+            gap:4px;
+            overflow-x:auto;
+            flex-shrink:0;
+        }
+        .tab-bar::-webkit-scrollbar {height:3px}
+        .log-tab {
+            height:28px;
+            padding:0 10px;
+            background:#444;
+            color:#ddd;
+            display:flex;
+            align-items:center;
+            gap:8px;
+            border-radius:4px 4px 0 0;
+            cursor:pointer;
+            white-space:nowrap;
+            flex-shrink:0;
+        }
+        .log-tab.active {background:#0066cc;color:#fff}
+        .tab-close {
+            width:16px;height:16px;
+            line-height:16px;
+            text-align:center;
+            border-radius:50%;
+            font-size:12px;
+        }
+        .tab-close:hover {background:rgba(255,255,255,0.2)}
+        .empty-tab-tip {color:#888;font-size:13px}
+        .toolbar {
+            height:36px;
+            background:#333;
+            display:flex;
+            align-items:center;
+            padding:0 8px;
+            gap:6px;
+            flex-wrap: nowrap;
+            flex-shrink:0;
+        }
+        #searchInput {
+            flex:1;
+            padding:4px 6px;
+            font-size:14px;
+            max-width: 720px;
+            min-width:0;
+        }
+        .toolbar-right {
+            display:flex;
+            gap:6px;
+            align-items:center;
+            flex-shrink: 0;
+        }
+        .color-group {
+            display:flex;
+            gap:4px;
+            align-items:center;
+        }
+        .color-group span {
+            width:22px;
+            height:22px;
+            display:inline-block;
+            cursor:pointer;
+            border:1px solid #fff;
+            border-radius:2px;
+        }
+        .color-group span.active {outline:2px solid #fff;outline-offset:2px}
+        .tool-btn {
+            padding:3px 8px;
+            cursor:pointer;
+            border:none;
+            border-radius:3px;
+            color:#fff;
+            font-size:13px;
+        }
+        #searchBtn {background:#00ccff;color:#111}
+        #markBtn {background:#00cc66}
+        #clearMarkBtn {background:#ff4444}
+        #downloadCurrentBtn {background:#9955ff}
+        .log-wrap {
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            overflow:hidden;
+            min-width:0;
+        }
+        .log-box-wrap {
+            flex:1;
+            display:flex;
+            flex-direction:column;
+            overflow:hidden;
+            min-width:0;
+        }
+        .log-container {
+            background:#111;
+            color:#eee;
+            overflow-x: scroll !important;
+            overflow-y: scroll !important;
+            padding:8px;
+            flex: 1;
+            width:100%;
+            min-width:0;
+        }
+        .log-line-stat {
+            height:24px;
+            line-height:24px;
+            padding:0 10px;
+            background:#222;
+            color:#aaa;
+            font-size:13px;
+            flex-shrink:0;
+            width:100%;
+        }
+        .line {
+            white-space: pre !important;
+            word-break: normal !important;
+            word-wrap: normal !important;
+            min-height:20px;
+            padding:2px 4px;
+            cursor:pointer;
+            user-select:text;
+            -webkit-user-select:text;
+            min-width:max-content;
+            flex-shrink:0;
+        }
+        .line.selected {outline:2px solid #00ccff}
+        .match {background:#ff0;color:#000}
+        .resize-splitter {
+            height:6px;
+            background:#555;
+            cursor:n-resize;
+            user-select:none;
+            flex-shrink:0;
+        }
+        .resize-splitter:hover {
+            background:#00ccff;
+        }
+        .search-result-panel {
+            background:#1a1a1a;
+            display:flex;
+            flex-direction:column;
+            min-height:80px;
+            max-height:70vh;
+            height: 220px;
+            width:100%;
+            min-width:0;
+        }
+        .result-title {
+            height:32px;
+            line-height:32px;
+            padding:0 10px;
+            background:#333;
+            color:#fff;
+            font-size:14px;
+            flex-shrink: 0;
+            width:100%;
+        }
+        .result-box {
+            flex:1;
+            overflow-x: scroll !important;
+            overflow-y: auto !important;
+            padding:8px;
+            color:#eee;
+            width:100%;
+            min-width:0;
+        }
+        .result-box::-webkit-scrollbar:horizontal {height:6px;}
+        .log-container::-webkit-scrollbar:horizontal {height:6px;}
+        .result-line {
+            padding:3px 6px;
+            margin:2px 0;
+            background:#222;
+            cursor:pointer;
+            white-space: pre !important;
+            word-break: normal !important;
+            word-wrap: normal !important;
+            user-select:text;
+            -webkit-user-select:text;
+            min-width: max-content;
+            flex-shrink:0;
+        }
+        .result-line:hover {background:#333}
+        .empty-tip {color:#999;text-align:center;padding:20px}
+    </style>
+</head>
+<body>
+<div class="sidebar">
+    <h3>日志文件列表</h3>
+    <div id="fileList"></div>
+</div>
+<div class="main">
+    <div class="tab-bar" id="tabBar">
+        <span class="empty-tab-tip">未打开任何日志文件</span>
+    </div>
+    <div class="toolbar">
+        <input id="searchInput" placeholder="输入关键字...">
+        <div class="toolbar-right">
+            <div class="color-group">
+                <span style="background:#00ffff" data-color="#00ffff"></span>
+                <span style="background:#ff8800" data-color="#ff8800"></span>
+                <span style="background:#ffff00" data-color="#ffff00"></span>
+                <span style="background:#8800ff" data-color="#8800ff"></span>
+                <span style="background:#008800" data-color="#008800"></span>
+            </div>
+            <button class="tool-btn" id="searchBtn">搜索关键字</button>
+            <button class="tool-btn" id="markBtn">标记当前选中行</button>
+            <button class="tool-btn" id="clearMarkBtn">清除所有标记</button>
+            <button class="tool-btn" id="downloadCurrentBtn">下载当前日志</button>
+        </div>
+    </div>
+    <div class="log-wrap" id="logWrap">
+        <div class="log-box-wrap">
+            <div class="log-container" id="logBox"></div>
+            <div class="log-line-stat" id="logLineStat">当前渲染行数：0</div>
+        </div>
+        <div class="resize-splitter" id="splitter"></div>
+        <div class="search-result-panel" id="resultPanel">
+            <div class="result-title">查找结果 <span id="matchCount">0</span> 条命中 | 面板展示：<span id="resultShowCount">0</span> 行</div>
+            <div class="result-box" id="resultBox">
+                <div class="empty-tip">输入关键词点击搜索，匹配内容将展示在此处</div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    const API_BASE = "";
+    let currentFile = "";
+    let fileOffset = 0;
+    const PAGE_LIMIT = 2000;
+    let allLines = [];
+    let markMap = JSON.parse(localStorage.getItem("logMarkMap") || "{}");
+    let searchKeyword = "";
+    let selectLineIndex = null;
+    window.selectColor = "#00ffff";
+    let matchLines = [];
+    let tabList = [];
+
+    const $ = s => document.querySelector(s);
+    const $$ = s => document.querySelectorAll(s);
+
+    window.onload = () => {
+        refreshFileList();
+        bindEvent();
+        bindResizeSplitter();
+        $$(".color-group span")[0].classList.add("active");
+        const savedHeight = localStorage.getItem("resultPanelHeight");
+        if(savedHeight) $("#resultPanel").style.height = savedHeight + "px";
+        $("#logLineStat").innerText = "当前渲染行数：0";
+        $("#matchCount").innerText = "0";
+        $("#resultShowCount").innerText = "0";
+    }
+
+    function bindResizeSplitter() {
+        const splitter = $("#splitter");
+        const wrap = $("#logWrap");
+        const panel = $("#resultPanel");
+        let isDrag = false;
+        splitter.onmousedown = (e) => {
+            isDrag = true;
+            document.body.style.cursor = "n-resize";
+            document.body.style.userSelect = "none";
+        }
+        document.onmousemove = (e) => {
+            if(!isDrag) return;
+            const wrapRect = wrap.getBoundingClientRect();
+            let panelH = wrapRect.bottom - e.clientY;
+            const minH = 80;
+            const maxH = window.innerHeight * 0.7;
+            if(panelH < minH) panelH = minH;
+            if(panelH > maxH) panelH = maxH;
+            panel.style.height = panelH + "px";
+        }
+        document.onmouseup = () => {
+            if(isDrag) {
+                isDrag = false;
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+                localStorage.setItem("resultPanelHeight", panel.style.height.replace("px",""));
+            }
+        }
+    }
+
+    function renderTabBar() {
+        const bar = $("#tabBar");
+        if(tabList.length === 0) {
+            bar.innerHTML = '<span class="empty-tab-tip">未打开任何日志文件</span>';
+            return;
+        }
+        bar.innerHTML = "";
+        tabList.forEach(item => {
+            const tab = document.createElement("div");
+            tab.className = "log-tab" + (item.name === currentFile ? " active" : "");
+            tab.innerHTML = `<span>${item.name}</span><span class="tab-close" data-name="${item.name}">×</span>`;
+            tab.onclick = e => {
+                if(e.target.classList.contains("tab-close")) return;
+                switchTab(item.name);
+            }
+            tab.querySelector(".tab-close").onclick = e => {
+                e.stopPropagation();
+                closeTab(item.name);
+            }
+            bar.appendChild(tab);
+        })
+    }
+
+    function switchTab(filename) {
+        const target = tabList.find(t => t.name === filename);
+        if(!target) return;
+        saveCurrentTabData();
+        currentFile = target.name;
+        fileOffset = target.offset;
+        allLines = target.lines;
+        searchKeyword = "";
+        matchLines = [];
+        selectLineIndex = null;
+        $("#searchInput").value = "";
+        renderTabBar();
+        renderLines();
+        renderResultPanel();
+        $$(".log-item").forEach(el=>el.classList.remove("active"));
+        document.querySelector(`[data-file="${filename}"]`)?.classList.add("active");
+    }
+
+    function saveCurrentTabData() {
+        const idx = tabList.findIndex(t => t.name === currentFile);
+        if(idx > -1) {
+            tabList[idx].offset = fileOffset;
+            tabList[idx].lines = [...allLines];
+        }
+    }
+
+    function closeTab(filename) {
+        saveCurrentTabData();
+        tabList = tabList.filter(t => t.name !== filename);
+        if(currentFile === filename) {
+            if(tabList.length > 0) {
+                switchTab(tabList[tabList.length - 1].name);
+            } else {
+                currentFile = "";
+                fileOffset = 0;
+                allLines = [];
+                $("#logBox").innerHTML = "";
+                $("#logLineStat").innerText = "当前渲染行数：0";
+                matchLines = [];
+                renderResultPanel();
+            }
+        }
+        renderTabBar();
+    }
+
+    async function openFile(filename) {
+        if(filename === currentFile) return;
+        saveCurrentTabData();
+        if(!tabList.some(t => t.name === filename)) {
+            tabList.push({name: filename, offset: 0, lines: []})
+        }
+        await switchTab(filename);
+        await loadChunk(true);
+    }
+
+    async function downloadLogFile(filename) {
+        if(!filename) return alert("请选择日志文件");
+        try {
+            const res = await fetch(`${API_BASE}/api/log/download?file=${encodeURIComponent(filename)}`, {responseType: "blob"});
+            if(!res.ok) throw new Error("文件读取失败");
+            const blob = await res.blob();
+            const a = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch(err) {
+            alert("下载失败：" + err.message);
+            console.error("下载日志报错：", err);
+        }
+    }
+
+    async function refreshFileList() {
+        try {
+            const res = await fetch(`${API_BASE}/api/log/files`).then(r=>r.json());
+            const listEl = $("#fileList");
+            listEl.innerHTML = "";
+            if (!res || res.length === 0) {
+                listEl.innerHTML = '<div style="color:#999;padding:8px">暂无日志文件</div>';
+                return;
+            }
+            res.forEach(f => {
+                const div = document.createElement("div");
+                div.className = "log-item";
+                div.dataset.file = f.name;
+                div.innerHTML = `<span title="大小:${formatSize(f.size)}\n修改时间:${f.mtime}">${f.name}</span><button class="download-file-btn" data-filename="${f.name}">下载</button>`;
+                div.onclick = (e) => {
+                    if(e.target.classList.contains("download-file-btn")) return;
+                    openFile(f.name);
+                }
+                div.querySelector(".download-file-btn").onclick = e => {
+                    e.stopPropagation();
+                    downloadLogFile(f.name);
+                }
+                if(f.name === currentFile) div.classList.add("active");
+                listEl.appendChild(div);
+            })
+        } catch(err) {
+            $("#fileList").innerHTML = '<div style="color:#f66;padding:8px">接口加载失败，请检查后端服务</div>';
+            console.error("获取文件列表失败：", err);
+        }
+    }
+
+    async function loadChunk(isReset) {
+        if(!currentFile) return;
+        try {
+            const url = `${API_BASE}/api/log/read?file=${encodeURIComponent(currentFile)}&offset=${fileOffset}&limit=${PAGE_LIMIT}&reverse=true`;
+            const data = await fetch(url).then(r=>r.json());
+            if(isReset) allLines = [];
+            allLines = data.lines.concat(allLines);
+            fileOffset = data.nextOffset;
+            renderLines();
+        } catch(err) {
+            $("#logBox").innerHTML = `<div style="color:#f66;padding:10px">读取日志失败：${err.message}</div>`;
+            $("#logLineStat").innerText = "当前渲染行数：0";
+        }
+    }
+
+    function renderLines() {
+        const box = $("#logBox");
+        box.innerHTML = "";
+        allLines.forEach((text, idx) => {
+            if(text === undefined || text === null) return;
+            const lineDiv = document.createElement("div");
+            lineDiv.className = "line";
+            lineDiv.dataset.lineIdx = idx;
+            if(markMap[`${currentFile}-${idx}`]){
+                lineDiv.style.background = markMap[`${currentFile}-${idx}`];
+            }
+            if(idx === selectLineIndex) lineDiv.classList.add("selected");
+            if(searchKeyword){
+                const reg = new RegExp(`(${searchKeyword})`,"gi");
+                lineDiv.innerHTML = text.replace(reg, `<span class="match">$1</span>`);
+            }else{
+                lineDiv.innerText = text;
+            }
+            lineDiv.onclick = () => {
+                selectLineIndex = idx;
+                renderLines();
+            }
+            box.appendChild(lineDiv);
+        })
+        $("#logLineStat").innerText = `当前渲染行数：${allLines.length}`;
+    }
+
+    function renderResultPanel() {
+        const resultBox = $("#resultBox");
+        const countDom = $("#matchCount");
+        const showCountDom = $("#resultShowCount");
+        countDom.innerText = String(matchLines.length);
+        showCountDom.innerText = String(matchLines.length);
+        resultBox.innerHTML = "";
+        if(matchLines.length === 0) {
+            resultBox.innerHTML = `<div class="empty-tip">输入关键词点击搜索，匹配内容将展示在此处</div>`;
+            return;
+        }
+        matchLines.forEach(item => {
+            const text = item.content;
+            const targetLineNo = item.lineNo;
+            if(text === undefined || text === null) return;
+            const div = document.createElement("div");
+            div.className = "result-line";
+            div.dataset.lineNo = targetLineNo;
+            const reg = new RegExp(`(${searchKeyword})`,"gi");
+            div.innerHTML = `<span style="color:#888;margin-right:8px;user-select:none;">[${targetLineNo}]</span>` + text.replace(reg, `<span class="match">$1</span>`);
+            div.onclick = () => {
+                const targetLine = Array.from($$(".line")).find(el => Number(el.dataset.lineIdx) === targetLineNo);
+                if(targetLine) {
+                    selectLineIndex = targetLineNo;
+                    renderLines();
+                    targetLine.scrollIntoView({behavior:"smooth",block:"center"});
+                }else{
+                    alert(`第${targetLineNo}行未加载，请向上滚动加载更多历史日志`);
+                }
+            }
+            resultBox.appendChild(div);
+        })
+    }
+
+    async function doSearch() {
+        const val = $("#searchInput").value.trim();
+        searchKeyword = val;
+        if(!val){
+            matchLines = [];
+            renderResultPanel();
+            renderLines();
+            return;
+        }
+        try {
+            const url = `${API_BASE}/api/log/search?file=${encodeURIComponent(currentFile)}&keyword=${encodeURIComponent(searchKeyword)}`;
+            const data = await fetch(url).then(r=>r.json());
+            matchLines = data?.matches || [];
+            renderLines();
+            renderResultPanel();
+        } catch(err) {
+            alert("搜索接口异常：" + err.message);
+            console.error("搜索报错：", err);
+        }
+    }
+
+    function markCurrentLine() {
+        if(!currentFile || selectLineIndex === null) {
+            alert("请先点击选中一行日志");
+            return;
+        }
+        const key = `${currentFile}-${selectLineIndex}`;
+        markMap[key] = window.selectColor;
+        localStorage.setItem("logMarkMap", JSON.stringify(markMap));
+        renderLines();
+    }
+
+    function clearAllMark() {
+        if(!currentFile) return;
+        const prefix = `${currentFile}-`;
+        Object.keys(markMap).forEach(k=>{
+            if(k.startsWith(prefix)) delete markMap[k];
+        })
+        localStorage.setItem("logMarkMap", JSON.stringify(markMap));
+        renderLines();
+    }
+
+    function bindEvent() {
+        $$(".color-group span").forEach(sp => {
+            sp.onclick = () => {
+                window.selectColor = sp.dataset.color;
+                $$(".color-group span").forEach(s=>s.classList.remove("active"));
+                sp.classList.add("active");
+            }
+        })
+        $("#logBox").addEventListener("scroll", async e => {
+            const el = e.target;
+            if(el.scrollTop <= 100 && fileOffset > 0){
+                const oldScrollHeight = el.scrollHeight;
+                const oldScrollTop = el.scrollTop;
+                await loadChunk(false);
+                const newScrollHeight = el.scrollHeight;
+                el.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+            }
+        })
+        $("#searchBtn").onclick = doSearch;
+        $("#markBtn").onclick = markCurrentLine;
+        $("#clearMarkBtn").onclick = clearAllMark;
+        $("#downloadCurrentBtn").onclick = () => {
+            if(!currentFile) return alert("未打开任何日志文件，无法下载");
+            downloadLogFile(currentFile);
+        }
+        $("#searchInput").addEventListener("keydown", e=>{
+            if(e.key === "Enter") doSearch();
+        })
+    }
+
+    function formatSize(b) {
+        if(b < 1024) return b + "B";
+        if(b < 1024*1024) return (b/1024).toFixed(1)+"KB";
+        return (b/1024/1024).toFixed(2)+"MB";
+    }
+</script>
+</body>
+</html>

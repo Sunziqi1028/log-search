@@ -1,0 +1,5 @@
+[      75ms] ReferenceError: $ is not defined
+    at bindEvent (http://127.0.0.1:8080/:691:9)
+    at window.onload (http://127.0.0.1:8080/:296:9)
+[      94ms] ReferenceError: $ is not defined
+    at refreshFileList (http://127.0.0.1:8080/:456:13)

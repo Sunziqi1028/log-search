@@ -1,0 +1,16 @@
+- generic [active] [ref=e1]:
+  - heading "日志文件列表" [level=3] [ref=e3]
+  - generic [ref=e4]:
+    - generic [ref=e6]: 未打开任何日志文件
+    - generic [ref=e7]:
+      - textbox "输入关键字..." [ref=e8]
+      - generic [ref=e9]:
+        - button "搜索关键字" [ref=e16] [cursor=pointer]
+        - button "标记当前选中行" [ref=e17] [cursor=pointer]
+        - button "清除所有标记" [ref=e18] [cursor=pointer]
+        - button "下载当前日志" [ref=e19] [cursor=pointer]
+    - generic [ref=e20]:
+      - generic [ref=e23]: 当前渲染行数：0
+      - generic [ref=e25]:
+        - generic [ref=e26]: 查找结果 0 条命中 | 面板展示：0 行
+        - generic [ref=e28]: 输入关键词点击搜索，匹配内容将展示在此处

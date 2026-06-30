@@ -111,7 +111,6 @@
         #searchBtn {background:#00ccff;color:#111}
         #markBtn {background:#00cc66}
         #clearMarkBtn {background:#ff4444}
-        #downloadCurrentBtn {background:#9955ff}
         .log-wrap {
             flex:1;
             display:flex;
@@ -135,6 +134,20 @@
             flex: 1;
             width:100%;
             min-width:0;
+            /* 虚拟滚动：用占位撑开高度 */
+            position: relative;
+        }
+        .log-spacer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+        }
+        .log-content {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
         }
         .log-line-stat {
             height:24px;
@@ -216,6 +229,7 @@
         }
         .result-line:hover {background:#333}
         .empty-tip {color:#999;text-align:center;padding:20px}
+        .loading-tip {color:#888;text-align:center;padding:20px}
     </style>
 </head>
 <body>
@@ -240,7 +254,6 @@
             <button class="tool-btn" id="searchBtn">搜索关键字</button>
             <button class="tool-btn" id="markBtn">标记当前选中行</button>
             <button class="tool-btn" id="clearMarkBtn">清除所有标记</button>
-            <button class="tool-btn" id="downloadCurrentBtn">下载当前日志</button>
         </div>
     </div>
     <div class="log-wrap" id="logWrap">
@@ -260,8 +273,6 @@
 <script>
     const API_BASE = "";
     let currentFile = "";
-    let fileOffset = 0;
-    const PAGE_LIMIT = 2000;
     let allLines = [];
     let markMap = JSON.parse(localStorage.getItem("logMarkMap") || "{}");
     let searchKeyword = "";
@@ -269,6 +280,13 @@
     window.selectColor = "#00ffff";
     let matchLines = [];
     let tabList = [];
+
+    // 虚拟滚动
+    const ROW_HEIGHT = 24; // 每行高度（含 padding）
+    let startIdx = 0;
+    let endIdx = 0;
+    let totalLinesCount = 0;
+    let isLoading = false;
 
     const $ = s => document.querySelector(s);
     const $$ = s => document.querySelectorAll(s);
@@ -341,16 +359,15 @@
     function switchTab(filename) {
         const target = tabList.find(t => t.name === filename);
         if(!target) return;
-        saveCurrentTabData();
         currentFile = target.name;
-        fileOffset = target.offset;
-        allLines = target.lines;
+        allLines = target.lines || [];
+        totalLinesCount = target.totalLines || allLines.length;
         searchKeyword = "";
         matchLines = [];
         selectLineIndex = null;
         $("#searchInput").value = "";
         renderTabBar();
-        renderLines();
+        loadAndRender();
         renderResultPanel();
         $$(".log-item").forEach(el=>el.classList.remove("active"));
         document.querySelector(`[data-file="${filename}"]`)?.classList.add("active");
@@ -359,8 +376,7 @@
     function saveCurrentTabData() {
         const idx = tabList.findIndex(t => t.name === currentFile);
         if(idx > -1) {
-            tabList[idx].offset = fileOffset;
-            tabList[idx].lines = [...allLines];
+            tabList[idx].lines = allLines;
         }
     }
 
@@ -372,7 +388,6 @@
                 switchTab(tabList[tabList.length - 1].name);
             } else {
                 currentFile = "";
-                fileOffset = 0;
                 allLines = [];
                 $("#logBox").innerHTML = "";
                 $("#logLineStat").innerText = "当前渲染行数：0";
@@ -387,10 +402,9 @@
         if(filename === currentFile) return;
         saveCurrentTabData();
         if(!tabList.some(t => t.name === filename)) {
-            tabList.push({name: filename, offset: 0, lines: []})
+            tabList.push({name: filename, lines: []})
         }
         await switchTab(filename);
-        await loadChunk(true);
     }
 
     async function downloadLogFile(filename) {
@@ -444,46 +458,101 @@
         }
     }
 
-    async function loadChunk(isReset) {
-        if(!currentFile) return;
+    async function loadAndRender() {
+        if(!currentFile || isLoading) return;
+        isLoading = true;
         try {
-            const url = `${API_BASE}/api/log/read?file=${encodeURIComponent(currentFile)}&offset=${fileOffset}&limit=${PAGE_LIMIT}&reverse=true`;
+            const url = `${API_BASE}/api/log/read?file=${encodeURIComponent(currentFile)}`;
             const data = await fetch(url).then(r=>r.json());
-            if(isReset) allLines = [];
-            allLines = data.lines.concat(allLines);
-            fileOffset = data.nextOffset;
-            renderLines();
+            allLines = data.lines || [];
+            totalLinesCount = data.totalLines || allLines.length;
+            // 初始化虚拟滚动容器
+            initVirtualScroll();
         } catch(err) {
             $("#logBox").innerHTML = `<div style="color:#f66;padding:10px">读取日志失败：${err.message}</div>`;
             $("#logLineStat").innerText = "当前渲染行数：0";
         }
+        isLoading = false;
     }
 
-    function renderLines() {
+    // ========== 虚拟滚动：只渲染可见区域的行 ==========
+    function initVirtualScroll() {
         const box = $("#logBox");
-        box.innerHTML = "";
-        allLines.forEach((text, idx) => {
-            if(text === undefined || text === null) return;
-            const lineDiv = document.createElement("div");
-            lineDiv.className = "line";
-            lineDiv.dataset.lineIdx = idx;
-            if(markMap[`${currentFile}-${idx}`]){
-                lineDiv.style.background = markMap[`${currentFile}-${idx}`];
+        if (!allLines.length) {
+            box.innerHTML = "";
+            $("#logLineStat").innerText = "共 0 行";
+            return;
+        }
+
+        // 创建占位 spacer 撑开高度
+        const totalH = allLines.length * ROW_HEIGHT;
+        box.innerHTML = `<div class="log-spacer" style="height:${totalH}px"></div><div class="log-content"></div>`;
+
+        // 绑定滚动事件
+        box.onscroll = onLogScroll;
+
+        // 首次渲染
+        renderVisible();
+    }
+
+    function onLogScroll() {
+        requestAnimationFrame(renderVisible);
+    }
+
+    function renderVisible() {
+        const box = $("#logBox");
+        const content = box.querySelector(".log-content");
+        if (!content) return;
+
+        const st = box.scrollTop;
+        const ch = box.clientHeight;
+
+        // 计算可见范围（上下各多渲染 20 行作为缓冲）
+        startIdx = Math.max(0, Math.floor(st / ROW_HEIGHT) - 20);
+        endIdx = Math.min(allLines.length, Math.ceil((st + ch) / ROW_HEIGHT) + 20);
+
+        let html = "";
+        for (let i = startIdx; i < endIdx; i++) {
+            const text = allLines[i];
+            if (text === undefined || text === null) continue;
+
+            // 转义 HTML
+            let displayText = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            if (searchKeyword) {
+                const reg = new RegExp(`(${escapeRegex(searchKeyword)})`, "gi");
+                displayText = displayText.replace(reg, '<span class="match">$1</span>');
             }
-            if(idx === selectLineIndex) lineDiv.classList.add("selected");
-            if(searchKeyword){
-                const reg = new RegExp(`(${searchKeyword})`,"gi");
-                lineDiv.innerHTML = text.replace(reg, `<span class="match">$1</span>`);
-            }else{
-                lineDiv.innerText = text;
+
+            let cls = "line";
+            let style = "";
+            if (markMap[`${currentFile}-${i}`]) {
+                style = ` style="background:${markMap[`${currentFile}-${i}`]}"`;
             }
-            lineDiv.onclick = () => {
-                selectLineIndex = idx;
-                renderLines();
-            }
-            box.appendChild(lineDiv);
-        })
-        $("#logLineStat").innerText = `当前渲染行数：${allLines.length}`;
+            if (i === selectLineIndex) cls += " selected";
+
+            html += `<div class="${cls}" data-line-idx="${i}"${style} onclick="selectRow(${i})"><span style="color:#666;margin-right:12px;user-select:none;min-width:40px;display:inline-block;text-align:right;">${i+1}</span>${displayText}</div>`;
+        }
+
+        content.innerHTML = html;
+
+        // 用 transform 保持滚动位置
+        const translateY = startIdx * ROW_HEIGHT;
+        content.style.transform = `translateY(${translateY}px)`;
+
+        $("#logLineStat").innerText = `共 ${totalLinesCount.toLocaleString()} 行 | 渲染 ${endIdx - startIdx} 行 (索引 ${startIdx}~${endIdx})`;
+    }
+
+    function selectRow(idx) {
+        selectLineIndex = idx;
+        renderVisible();
+    }
+
+    function escapeRegex(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     function renderResultPanel() {
@@ -510,10 +579,10 @@
                 const targetLine = Array.from($$(".line")).find(el => Number(el.dataset.lineIdx) === targetLineNo);
                 if(targetLine) {
                     selectLineIndex = targetLineNo;
-                    renderLines();
+                    renderVisible();
                     targetLine.scrollIntoView({behavior:"smooth",block:"center"});
                 }else{
-                    alert(`第${targetLineNo}行未加载，请向上滚动加载更多历史日志`);
+                    alert(`第${targetLineNo}行未渲染，请使用搜索定位`);
                 }
             }
             resultBox.appendChild(div);
@@ -526,14 +595,68 @@
         if(!val){
             matchLines = [];
             renderResultPanel();
-            renderLines();
+            // 重新渲染可见区域清除高亮
+            const box = $("#logBox");
+            const content = box?.querySelector(".log-content");
+            if (content) {
+                const st = box.scrollTop;
+                const ch = box.clientHeight;
+                startIdx = Math.max(0, Math.floor(st / ROW_HEIGHT) - 20);
+                endIdx = Math.min(allLines.length, Math.ceil((st + ch) / ROW_HEIGHT) + 20);
+                let html = "";
+                for (let i = startIdx; i < endIdx; i++) {
+                    const text = allLines[i];
+                    if (text === undefined || text === null) continue;
+                    let displayText = text
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                    let cls = "line";
+                    let style = "";
+                    if (markMap[`${currentFile}-${i}`]) {
+                        style = ` style="background:${markMap[`${currentFile}-${i}`]}"`;
+                    }
+                    if (i === selectLineIndex) cls += " selected";
+                    html += `<div class="${cls}" data-line-idx="${i}" onclick="selectRow(${i})"${style}><span style="color:#666;margin-right:12px;user-select:none;min-width:40px;display:inline-block;text-align:right;">${i+1}</span>${displayText}</div>`;
+                }
+                content.innerHTML = html;
+                content.style.transform = `translateY(${startIdx * ROW_HEIGHT}px)`;
+            }
             return;
         }
         try {
             const url = `${API_BASE}/api/log/search?file=${encodeURIComponent(currentFile)}&keyword=${encodeURIComponent(searchKeyword)}`;
             const data = await fetch(url).then(r=>r.json());
             matchLines = data?.matches || [];
-            renderLines();
+            // 重新渲染可见区域以应用搜索高亮
+            const box = $("#logBox");
+            const content = box?.querySelector(".log-content");
+            if (content) {
+                const st = box.scrollTop;
+                const ch = box.clientHeight;
+                startIdx = Math.max(0, Math.floor(st / ROW_HEIGHT) - 20);
+                endIdx = Math.min(allLines.length, Math.ceil((st + ch) / ROW_HEIGHT) + 20);
+                let html = "";
+                for (let i = startIdx; i < endIdx; i++) {
+                    const text = allLines[i];
+                    if (text === undefined || text === null) continue;
+                    let displayText = text
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+                    const reg = new RegExp(`(${escapeRegex(searchKeyword)})`, "gi");
+                    displayText = displayText.replace(reg, '<span class="match">$1</span>');
+                    let cls = "line";
+                    let style = "";
+                    if (markMap[`${currentFile}-${i}`]) {
+                        style = ` style="background:${markMap[`${currentFile}-${i}`]}"`;
+                    }
+                    if (i === selectLineIndex) cls += " selected";
+                    html += `<div class="${cls}" data-line-idx="${i}" onclick="selectRow(${i})"${style}><span style="color:#666;margin-right:12px;user-select:none;min-width:40px;display:inline-block;text-align:right;">${i+1}</span>${displayText}</div>`;
+                }
+                content.innerHTML = html;
+                content.style.transform = `translateY(${startIdx * ROW_HEIGHT}px)`;
+            }
             renderResultPanel();
         } catch(err) {
             alert("搜索接口异常：" + err.message);
@@ -549,7 +672,7 @@
         const key = `${currentFile}-${selectLineIndex}`;
         markMap[key] = window.selectColor;
         localStorage.setItem("logMarkMap", JSON.stringify(markMap));
-        renderLines();
+        renderVisible();
     }
 
     function clearAllMark() {
@@ -559,7 +682,7 @@
             if(k.startsWith(prefix)) delete markMap[k];
         })
         localStorage.setItem("logMarkMap", JSON.stringify(markMap));
-        renderLines();
+        renderVisible();
     }
 
     function bindEvent() {
@@ -570,23 +693,9 @@
                 sp.classList.add("active");
             }
         })
-        $("#logBox").addEventListener("scroll", async e => {
-            const el = e.target;
-            if(el.scrollTop <= 100 && fileOffset > 0){
-                const oldScrollHeight = el.scrollHeight;
-                const oldScrollTop = el.scrollTop;
-                await loadChunk(false);
-                const newScrollHeight = el.scrollHeight;
-                el.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
-            }
-        })
         $("#searchBtn").onclick = doSearch;
         $("#markBtn").onclick = markCurrentLine;
         $("#clearMarkBtn").onclick = clearAllMark;
-        $("#downloadCurrentBtn").onclick = () => {
-            if(!currentFile) return alert("未打开任何日志文件，无法下载");
-            downloadLogFile(currentFile);
-        }
         $("#searchInput").addEventListener("keydown", e=>{
             if(e.key === "Enter") doSearch();
         })

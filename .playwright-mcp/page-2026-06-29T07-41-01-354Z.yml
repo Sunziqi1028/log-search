@@ -1,0 +1,36 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "日志文件列表" [level=3] [ref=e3]
+    - generic [ref=e4]:
+      - generic [ref=e5] [cursor=pointer]:
+        - generic "大小:41.05MB 修改时间:2026-06-17 20:41:04" [ref=e6]: 2026061720-003.log
+        - button "下载" [ref=e7]
+      - generic [ref=e8] [cursor=pointer]:
+        - generic "大小:35.25MB 修改时间:2026-06-17 20:29:21" [ref=e9]: 2026061720-002.log
+        - button "下载" [ref=e10]
+      - generic [ref=e11] [cursor=pointer]:
+        - generic "大小:50.00MB 修改时间:2026-06-17 14:56:20" [ref=e12]: 2026061700-001.log
+        - button "下载" [ref=e13]
+      - generic [ref=e14] [cursor=pointer]:
+        - generic "大小:25.24MB 修改时间:2026-06-17 14:48:49" [ref=e15]: 2026061714-018.log
+        - button "下载" [ref=e16]
+      - generic [ref=e17] [cursor=pointer]:
+        - generic "大小:50.01MB 修改时间:2026-06-16 16:04:26" [ref=e18]: 2026061616-010.log
+        - button "下载" [ref=e19]
+      - generic [ref=e20] [cursor=pointer]:
+        - generic "大小:50.01MB 修改时间:2026-06-16 16:04:17" [ref=e21]: 2026061616-009.log
+        - button "下载" [ref=e22]
+  - generic [ref=e23]:
+    - generic [ref=e25]: 未打开任何日志文件
+    - generic [ref=e26]:
+      - textbox "输入关键字..." [ref=e27]
+      - generic [ref=e28]:
+        - button "搜索关键字" [ref=e35] [cursor=pointer]
+        - button "标记当前选中行" [ref=e36] [cursor=pointer]
+        - button "清除所有标记" [ref=e37] [cursor=pointer]
+        - button "下载当前日志" [ref=e38] [cursor=pointer]
+    - generic [ref=e39]:
+      - generic [ref=e42]: 当前渲染行数：0
+      - generic [ref=e44]:
+        - generic [ref=e45]: 查找结果 0 条命中 | 面板展示：0 行
+        - generic [ref=e47]: 输入关键词点击搜索，匹配内容将展示在此处

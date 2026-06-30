@@ -32,10 +32,10 @@ type SearchMatch struct {
 	Content string `json:"content"`
 }
 
-// ReadChunkResp 读取分片返回结构
+// ReadChunkResp 读取返回结构
 type ReadChunkResp struct {
 	Lines      []string `json:"lines"`
-	NextOffset int64    `json:"nextOffset"`
+	TotalLines int      `json:"totalLines"`
 }
 
 // 列出当前目录所有 .log 文件
@@ -80,17 +80,9 @@ func listLogFiles(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(files)
 }
 
-// 从文件尾部反向读取 N 行（核心：大文件分片不加载全量）
+// 读取整个日志文件，一次性返回所有行
 func readLogChunk(w http.ResponseWriter, r *http.Request) {
 	fileName := r.URL.Query().Get("file")
-	offsetStr := r.URL.Query().Get("offset")
-	limitStr := r.URL.Query().Get("limit")
-
-	limit, _ := strconv.Atoi(limitStr)
-	if limit <= 0 {
-		limit = 2000
-	}
-	offset, _ := strconv.ParseInt(offsetStr, 10, 64)
 	wd, err := os.Getwd()
 	if err != nil {
 		http.Error(w, "获取工作目录失败", 500)
@@ -104,61 +96,22 @@ func readLogChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	stat, _ := f.Stat()
-	fileSize := stat.Size()
-	if offset == 0 {
-		offset = fileSize
+	// 使用 bufio.Scanner 按行读取，支持超长行
+	scanner := bufio.NewScanner(f)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+
+	var lines []string
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
 	}
 
-	lines, newOffset := readReverseLines(f, offset, limit)
 	resp := ReadChunkResp{
 		Lines:      lines,
-		NextOffset: newOffset,
+		TotalLines: len(lines),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
-}
-
-// 反向读取文件行，从 startOffset 往前找最多 maxLine 行
-// 返回 (读取到的行列表, 下一次应该开始的偏移量)
-func readReverseLines(f *os.File, startOffset int64, maxLine int) ([]string, int64) {
-	const readSize = 64 * 1024 // 每次读 64KB，大幅减少磁盘 seek 次数
-	buf := make([]byte, readSize)
-	var lines []string
-	currentEnd := startOffset
-
-	for len(lines) < maxLine && currentEnd > 0 {
-		readLen := readSize
-		if currentEnd < readSize {
-			readLen = currentEnd
-		}
-		currentStart := currentEnd - readLen
-		_, err := f.Seek(currentStart, 0)
-		if err != nil {
-			break
-		}
-		n, err := f.Read(buf[:readLen])
-		if err != nil && err != io.EOF {
-			break
-		}
-		chunk := buf[:n]
-		// 倒序扫描换行符
-		i := len(chunk) - 1
-		for i >= 0 && len(lines) < maxLine {
-			if chunk[i] == '\n' {
-				line := string(chunk[i+1:])
-				if line != "" {
-					lines = append(lines, line)
-				}
-				i--
-			} else {
-				i--
-			}
-		}
-		currentEnd = currentStart
-	}
-
-	return lines, currentEnd
 }
 
 // 全文搜索关键字
@@ -259,7 +212,7 @@ func main() {
 	http.HandleFunc("/api/log/search", searchLogFile)     // 关键字搜索
 	http.HandleFunc("/api/log/download", downloadLogFile) // 下载接口
 
-	fmt.Println("日志查看服务启动成功，地址：http://127.0.0.1:8080")
+	fmt.Println("日志查看服务启动成功,地址:http://127.0.0.1:8080")
 	err := http.ListenAndServe("0.0.0.0:8080", nil)
 	if err != nil {
 		fmt.Println("服务启动失败：", err)

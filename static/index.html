@@ -110,6 +110,7 @@
         }
         #searchBtn {background:#00ccff;color:#111}
         #markBtn {background:#00cc66}
+        #copyBtn {background:#0099cc}
         #clearMarkBtn {background:#ff4444}
         .log-wrap {
             flex:1;
@@ -253,6 +254,7 @@
             </div>
             <button class="tool-btn" id="searchBtn">搜索关键字</button>
             <button class="tool-btn" id="markBtn">标记当前选中行</button>
+            <button class="tool-btn" id="copyBtn">复制选中行</button>
             <button class="tool-btn" id="clearMarkBtn">清除所有标记</button>
         </div>
     </div>
@@ -575,16 +577,25 @@
             div.dataset.lineNo = targetLineNo;
             const reg = new RegExp(`(${searchKeyword})`,"gi");
             div.innerHTML = `<span style="color:#888;margin-right:8px;user-select:none;">[${targetLineNo}]</span>` + text.replace(reg, `<span class="match">$1</span>`);
-            div.onclick = () => {
-                const targetLine = Array.from($$(".line")).find(el => Number(el.dataset.lineIdx) === targetLineNo);
-                if(targetLine) {
-                    selectLineIndex = targetLineNo;
+            div.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetIdx = targetLineNo - 1; // lineNo is 1-based, array index is 0-based
+                selectLineIndex = targetIdx;
+                const box = $("#logBox");
+                // 先滚动到目标位置
+                box.scrollTop = targetIdx * ROW_HEIGHT - box.clientHeight / 2;
+                // 等待DOM更新后再渲染
+                requestAnimationFrame(() => {
                     renderVisible();
-                    targetLine.scrollIntoView({behavior:"smooth",block:"center"});
-                }else{
-                    alert(`第${targetLineNo}行未渲染，请使用搜索定位`);
-                }
-            }
+                    // 再等一帧确保行已渲染
+                    requestAnimationFrame(() => {
+                        const el = box.querySelector(`.line[data-line-idx="${targetIdx}"]`);
+                        if(el) {
+                            el.scrollIntoView({behavior:"smooth",block:"center"});
+                        }
+                    });
+                });
+            });
             resultBox.appendChild(div);
         })
     }
@@ -695,6 +706,22 @@
         })
         $("#searchBtn").onclick = doSearch;
         $("#markBtn").onclick = markCurrentLine;
+        $("#copyBtn").onclick = () => {
+            if(selectLineIndex === null) return alert("请先点击选中一行日志");
+            const text = allLines[selectLineIndex];
+            if(!text) return alert("该行内容为空");
+            if(navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => alert("已复制到剪贴板"));
+            } else {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                alert("已复制到剪贴板");
+            }
+        };
         $("#clearMarkBtn").onclick = clearAllMark;
         $("#searchInput").addEventListener("keydown", e=>{
             if(e.key === "Enter") doSearch();
